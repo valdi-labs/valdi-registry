@@ -1,0 +1,58 @@
+# This workflow will perform a test whenever there
+# is some change in code done to ensure that the changes
+# are not buggy and we are getting the desired output.
+name: Push to GHCR
+on:
+  push:
+    branches:
+      - redhat-** # IMPORTANT! this must match the jobs.build-and-publish.env.BRANCH_PREFIX (save the **).
+  workflow_dispatch:
+#  schedule:
+#    - cron: '0 0 * * *'  # every day at midnight
+env:
+    IMAGE_REGISTRY: ghcr.io/${{ github.repository_owner }}
+    REGISTRY_USER: ${{ github.actor }}
+    REGISTRY_PASSWORD: ${{ github.token }}
+
+jobs:
+  build-and-publish:
+    name: Publish container image
+    env:
+      BRANCH_PREFIX: redhat- # IMPORTANT! this must match the .on.push.branches prefix!
+      REGISTRY: quay.io/projectquay
+      REPO_NAME: ${{ github.event.repository.name }}
+      TAG_SUFFIX: -unstable
+    runs-on: 'ubuntu-latest'
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v2
+
+      - name: Set version from branch name
+        id: version-from-branch
+        if: startsWith('env.BRANCH_PREFIX', env.GITHUB_REF)
+        run: |
+          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          echo "::set-output name=version::${BRANCH_NAME/${{ env.BRANCH_PREFIX }}/}"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      # Push the image to GHCR (Image Registry)
+      - name: Push To GHCR
+        uses: redhat-actions/push-to-registry@v2.6
+        id: push
+        with:
+          image: ${{ steps.build_image.outputs.image }}
+          tags: ${{ steps.build_image.outputs.tags }}
+          registry: ${{ env.IMAGE_REGISTRY }}
+          username: ${{ env.REGISTRY_USER }}
+          password: ${{ env.REGISTRY_PASSWORD }}
+          extra-args: |
+            --disable-content-trust
+
+      - name: Echo outputs
+        run: |
+          echo "${{ toJSON(steps.push.outputs) }}"
